@@ -1,39 +1,53 @@
-## vCluster Plugin Example
+## vCluster Plugin
 
-This example plugin syncs car crds from the vcluster into the host cluster.
+This [vCluster](https://github.com/loft-sh/vcluster) plugin syncs [CAProviderClass](https://github.com/kubeops/csi-driver-cacerts) crds from the vcluster into the host cluster.
 
-For more information how to develop plugins in vcluster and a complete walk through, please refer to the [official vcluster docs](https://www.vcluster.com/docs/plugins/overview).
+This plugin has been forked from [loft-sh/vcluster-plugin-example](https://github.com/loft-sh/vcluster-plugin-example). For more information how to develop plugins in vcluster and a complete walk through, please refer to the [official vcluster docs](https://www.vcluster.com/docs/plugins/overview).
 
 ### Using the Plugin
 
 To use the plugin, create a new vcluster with the `plugin.yaml`:
 
 ```
-# Apply cars crd in host cluster
-kubectl apply -f https://raw.githubusercontent.com/loft-sh/vcluster-plugin-example/main/manifests/crds.yaml
+# Install csi-driver-cacerts in host cluster
+helm upgrade -i cert-manager-csi-driver-cacerts \
+  oci://ghcr.io/appscode-charts/cert-manager-csi-driver-cacerts \
+  --version v2024.5.17 \
+  -n cert-manager --create-namespace --wait
 
 # Use public plugin.yaml
-vcluster create my-vcluster -n my-vcluster -f https://raw.githubusercontent.com/loft-sh/vcluster-plugin-example/main/plugin.yaml
+vcluster create vcluster -n vcluster \
+  -f https://github.com/kubeops/vcluster-plugin/raw/master/plugin.yaml
 ```
 
 This will create a new vcluster with the plugin installed. After that, wait for vcluster to start up and check:
 
 ```
 # Create a car in the virtual cluster
-vcluster connect my-vcluster -n my-vcluster -- kubectl apply -f manifests/audi.yaml
+vcluster connect vcluster -n vcluster -- kubectl apply -f manifests/sample.yaml
 
 # Check if the car was synced to the host cluster
-kubectl get car -n my-vcluster
+kubectl get caproviderclass -n vcluster
 ```
 
 ### Building the Plugin
+
 To just build the plugin image and push it to the registry, run:
+
 ```
 # Build
-docker build . -t my-repo/my-plugin:0.0.1
+docker build --push -t ghcr.io/appscode/vcluster-plugin:v0.0.1 .
 
-# Push
-docker push my-repo/my-plugin:0.0.1
+# Multi-arch Build
+## Ensure docker builder with multi platform support
+docker buildx create \
+  --name container \
+  --driver=docker-container
+
+## Build & push image
+docker build --push \
+  --builder container --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/appscode/vcluster-plugin:v0.0.1 .
 ```
 
 Then exchange the image in the `plugin.yaml`.

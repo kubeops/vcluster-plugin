@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+
+---
+
+# openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout ./ca.key -out ./ca.crt -subj "/CN=mongo/O=kubedb"
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ca
+  namespace: demo
+  annotations:
+    vcluster.loft.sh/force-sync: "true"
+type: kubernetes.io/tls
+stringData:
+  tls.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIDIzCCAgugAwIBAgIUPd05+hXRAvrVWbrh4FM6GAhsGrswDQYJKoZIhvcNAQEL
+    BQAwITEOMAwGA1UEAwwFbW9uZ28xDzANBgNVBAoMBmt1YmVkYjAeFw0yNDA3MjYw
+    NDAyMjZaFw0zNDA3MjQwNDAyMjZaMCExDjAMBgNVBAMMBW1vbmdvMQ8wDQYDVQQK
+    DAZrdWJlZGIwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDM0lyMLqKF
+    t3EP3yMNBVKwywpTArA7sc0Y2dsSjBLQjmUQbAKp58V9tuIN9HSCWDICRdLwNa1m
+    JeAE2WUT+qAhcqf7/8779mhICDG1bfjGivESwou8UqcakvVey64oWBSPf/dU1Eno
+    FQZljKugQ2gDDNHf/xOsUuEnH2lZVa3etpHHx5Fk6d4G42s0T/oVXHOWm0/XVGhm
+    78+EackpZMQx+Zl1BC3a9ZoCtKg42AAVWiSXirsKFpdv0GRxgwJ8aJC+ncQpffGE
+    39KK7OljO3hzjxUGtWpTrv7K3MPgnpCFn0TEaCwT/aO+ZyhLYfveZewxJMv+oVMJ
+    qntP+lyoiPbXAgMBAAGjUzBRMB0GA1UdDgQWBBR4BLSdYaFQjv9k1duEOUNpCQBq
+    KDAfBgNVHSMEGDAWgBR4BLSdYaFQjv9k1duEOUNpCQBqKDAPBgNVHRMBAf8EBTAD
+    AQH/MA0GCSqGSIb3DQEBCwUAA4IBAQBUshA6MPw29CVql18Zq1ad6ZnCVwyLNvYO
+    SE0OYikwJRxhAekSy6JkjX6P3K4oazqPH0a7pbgYEZdXOtFO32io+mPQVlKgTKny
+    DoLLASWMynlSe5Zge0tfpl7SN6SMvGo/VDGa+6J/BfyaqWY3bYJexXGMxEve2eXP
+    YkjOkgT1ExMBjyEWWFfQMUlB8WOQQMIaaYLx1/K3qyNnEOa3SOI9MJpn7NmlOZI7
+    ytypCn+KCd+jkY7FDRSSaM6GqnRwqPWNZg6dmtl3tYnf46ufnC0bQ2fMk0645KeH
+    AM7M7ASsF7qJT7JSE03vf0NZFreV0BG+lw8Arfd5frWmKK6I8QSu
+    -----END CERTIFICATE-----
+  tls.key: |
+    -----BEGIN PRIVATE KEY-----
+    MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDM0lyMLqKFt3EP
+    3yMNBVKwywpTArA7sc0Y2dsSjBLQjmUQbAKp58V9tuIN9HSCWDICRdLwNa1mJeAE
+    2WUT+qAhcqf7/8779mhICDG1bfjGivESwou8UqcakvVey64oWBSPf/dU1EnoFQZl
+    jKugQ2gDDNHf/xOsUuEnH2lZVa3etpHHx5Fk6d4G42s0T/oVXHOWm0/XVGhm78+E
+    ackpZMQx+Zl1BC3a9ZoCtKg42AAVWiSXirsKFpdv0GRxgwJ8aJC+ncQpffGE39KK
+    7OljO3hzjxUGtWpTrv7K3MPgnpCFn0TEaCwT/aO+ZyhLYfveZewxJMv+oVMJqntP
+    +lyoiPbXAgMBAAECggEAO2vIB6873Tkz5tvgalWiAMJW83AzOo5BpzUE1mOmzbSR
+    42rCdxJTfD5DZLMH3gzCLWCeaqvX62uPizial2o9bJa732L+ZKC+7i7aZP1LkCYc
+    /ElOissbyZza7K6AjxnGlT8VvRl9e4Ql/+4ImI0VrtTYSnjQ90xwH46AXLd7osGl
+    t7uFPmBrYympBvA6bmZss9PyhmyFvZCS2yqpXw/Qx9VXDu3piUDxgcrMjREBz4p9
+    XSUmZZqiNFwgMvW4nWu1SxguVp2XSci79sPxB1B6GmpRDqwootMcSg167lTmsBdB
+    60waH0ltWKepXmKQUzgG1pCheVvpUcxwyGWhHmVzeQKBgQDntEJc59YjXpp5w75V
+    ZPoTox2a9qsuZTzoFJteMZR0xxJFv3G6NAZqQOjwGFP3/fAFuCrnXJm/i2d9qd3e
+    XVcyy71Ej330gM8UiPqoKGzRQOzRzuQIqPyOzulmNr0cBUJhCwOp819FNDAXUfRX
+    /n1hUGkAj9eMdeRWEmI+6AMHkwKBgQDiTHw87qQVvJa2G3FuazE6ZTQGMq+bRdab
+    LW7W+9ZKYvivJJLWAgBluebHOPWv1oMBFKICyw4kGenDLbvZEYgdL/IF+s96Jk4k
+    wwBND8En9cFb8F9cNsIDqQoe/TAIkgCF7FeF3YSMpCJUqNuYTFHOlS2YiYX/93tN
+    VwlYcX4WLQKBgQCvxeLWQhYEDP+ZQfKBK7I+9W4/IcOo1apH0WIwKeKaWG63NM2c
+    2VzIfGd5xKrmpeDRJe5+R5RnZ+ThwtyKlTrSURdLDKQbuR/fTy8AJHKwp9VAMPhy
+    zWeTGsqa/QmnWSILJmToJ7VtdXLKLiT0IB6TlYGiqHx3lPPci+O2HyI1OwKBgCTI
+    Abl1oD3YNTbMJxenXIz9PgNz4Y7/Pu5h6A4RSLc2du0gqK0YDjB6ksP2whgeaZSX
+    Ye3KSzYa8B/FIy8Y5mK4FEJcjbRw3WqkNzxPPznbe94Rp645SDeIFhkLVe9Oq78Y
+    tvEPHCgv1VSlTWvnm7RUEuEkGR+NfgEIEIDLkY7RAoGAHs7e7NGKZcYQJqSrZbZA
+    Pp0ncfI3v939L6fgcSz5hdQM0IFrIl7YEpOqdw0x90psVTEyYjhvKmj6wMPB34yJ
+    OYhOGH5P5B+1kOzLSFjPD6Q1MXreKcD9kekG7qUGI17aayEpWCkX4xicrTQqfchC
+    gI0PTtQf6mQyDRFuYlIfoYg=
+    -----END PRIVATE KEY-----
+
+---
+
+apiVersion: cacerts.csi.cert-manager.io/v1alpha1
+kind: CAProviderClass
+metadata:
+  name: ca-provider
+  namespace: demo
+spec:
+  refs:
+  - apiGroup: ""
+    kind: Secret
+    namespace: demo
+    name: ca
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curl-ubuntu
+  namespace: demo
+spec:
+  containers:
+  - name: main
+    image: appscode/curl:ubuntu
+    command:
+    - sleep
+    - "3600"
+    volumeMounts:
+    - name: cacerts
+      mountPath: /etc/ssl/certs
+  volumes:
+  - name: cacerts
+    csi:
+      driver: cacerts.csi.cert-manager.io
+      readOnly: true
+      volumeAttributes:
+        os: ubuntu
+        caProviderClasses: ca-provider

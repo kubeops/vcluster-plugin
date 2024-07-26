@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.21.5 as builder
+FROM golang:1.22 AS builder
 
 # Make sure we use go modules
 WORKDIR vcluster
@@ -8,7 +8,7 @@ WORKDIR vcluster
 COPY . .
 
 # Build cmd
-RUN CGO_ENABLED=0 GO111MODULE=on go build -mod vendor -o /plugin main.go
+RUN CGO_ENABLED=0 go build -mod vendor -o /plugin main.go
 
 # we use alpine for easier debugging
 FROM alpine
