@@ -18,7 +18,6 @@ import (
 	api "kubeops.dev/csi-driver-cacerts/apis/cacerts/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 )
 
 func init() {
@@ -100,9 +99,6 @@ func (s *cpcSyncer) translateSpec(vObj *api.CAProviderClass) *api.CAProviderClas
 		pObj.Spec.Refs[i] = ref
 	}
 
-	data, _ := yaml.Marshal(pObj)
-	fmt.Println(string(data))
-
 	return &pObj
 }
 
@@ -123,8 +119,6 @@ func (s *cpcSyncer) translateUpdate(ctx context.Context, pObj, vObj *api.CAProvi
 		updated = translator.NewIfNil(updated, pObj)
 		updated.Spec = updatedSpecObj.Spec
 	}
-
-	printDiff(pObj, updated)
 
 	return updated
 }

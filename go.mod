@@ -13,7 +13,6 @@ require (
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e
 	kubeops.dev/csi-driver-cacerts v0.0.3
 	sigs.k8s.io/controller-runtime v0.17.2
-	sigs.k8s.io/yaml v1.4.0
 )
 
 require (
@@ -203,4 +202,5 @@ require (
 	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.14.3-0.20230601165947-6ce0bf390ce3 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
+	sigs.k8s.io/yaml v1.4.0 // indirect
 )

@@ -38,8 +38,6 @@ func (p *podHook) MutateCreatePhysical(ctx context.Context, obj client.Object) (
 		return nil, fmt.Errorf("object %v is not a pod", obj)
 	}
 
-	fmt.Println("CREATE+++++++++", pod.Namespace, pod.Name)
-
 	if err := p.mutateCACertVolumes(pod); err != nil {
 		return nil, err
 	}
@@ -53,8 +51,6 @@ func (p *podHook) MutateUpdatePhysical(ctx context.Context, obj client.Object) (
 	if !ok {
 		return nil, fmt.Errorf("object %v is not a pod", obj)
 	}
-
-	fmt.Println("CREATE-------------", pod.Namespace, pod.Name)
 
 	if err := p.mutateCACertVolumes(pod); err != nil {
 		return nil, err
