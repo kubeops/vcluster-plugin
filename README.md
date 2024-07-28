@@ -2,7 +2,7 @@
 
 This [vCluster](https://github.com/loft-sh/vcluster) plugin syncs [CAProviderClass](https://github.com/kubeops/csi-driver-cacerts) crds from the vcluster into the host cluster.
 
-This plugin has been forked from [loft-sh/vcluster-plugin-example](https://github.com/loft-sh/vcluster-plugin-example). For more information how to develop plugins in vcluster and a complete walk through, please refer to the [official vcluster docs](https://www.vcluster.com/docs/plugins/overview).
+This plugin has been forked from [loft-sh/vcluster-plugin-example](https://github.com/loft-sh/vcluster-plugin-example). For more information how to develop plugins in vcluster and a complete walk through, please refer to the [official vcluster docs](https://www.vcluster.com/docs/v0.19/advanced-topics/plugins-overview).
 
 ### Using the Plugin
 
@@ -12,7 +12,7 @@ To use the plugin, create a new vcluster with the `plugin.yaml`:
 # Install csi-driver-cacerts in host cluster
 helm upgrade -i cert-manager-csi-driver-cacerts \
   oci://ghcr.io/appscode-charts/cert-manager-csi-driver-cacerts \
-  --version v2024.5.17 \
+  --version v2024.7.28 \
   -n cert-manager --create-namespace --wait
 
 # Use public plugin.yaml

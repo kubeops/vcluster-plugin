@@ -38,16 +38,6 @@ type cpcSyncer struct {
 var _ synctypes.Initializer = &cpcSyncer{}
 
 func (s *cpcSyncer) Init(ctx *synccontext.RegisterContext) error {
-	// set suffix
-	// https://github.com/loft-sh/vcluster/blob/v0.19.7/cmd/vcluster/cmd/start.go#L61-L68
-	translate.VClusterName = ctx.Options.Name
-	if translate.VClusterName == "" {
-		translate.VClusterName = ctx.Options.DeprecatedSuffix
-	}
-	if translate.VClusterName == "" {
-		translate.VClusterName = "vcluster"
-	}
-
 	out, err := os.ReadFile("manifests/crds.yaml")
 	if err != nil {
 		return err
