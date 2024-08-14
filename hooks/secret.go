@@ -3,6 +3,7 @@ package hooks
 import (
 	"context"
 	"fmt"
+
 	"github.com/loft-sh/vcluster-sdk/plugin"
 	synccontext "github.com/loft-sh/vcluster/pkg/controllers/syncer/context"
 	synctypes "github.com/loft-sh/vcluster/pkg/types"
