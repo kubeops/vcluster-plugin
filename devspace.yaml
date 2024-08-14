@@ -27,6 +27,8 @@ deployments:
         plugin:
           vcluster-plugin:
             version: v2
+            config:
+              reportingSecret: fake-reporting-secret
             rbac:
               role:
                 extraRules:

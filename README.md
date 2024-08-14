@@ -30,6 +30,17 @@ vcluster connect vcluster -n vcluster -- kubectl apply -f manifests/sample.yaml
 kubectl get caproviderclass -n vcluster
 ```
 
+```
+# create a fake-reporting-secret in the host cluster
+kubectl apply -f manifests/fake_reporting_secret.yaml
+
+# create a pod in vcluster that uses the reporting secret
+vcluster connect vcluster -n vcluster -- kubectl apply -f manifests/reporting_secret_pod.yaml
+
+# check the pod is using the host secret directly
+kubectl get pods -n vcluster agent-x-default-x-vcluster -o yaml
+```
+
 ### Building the Plugin
 
 To just build the plugin image and push it to the registry, run:
