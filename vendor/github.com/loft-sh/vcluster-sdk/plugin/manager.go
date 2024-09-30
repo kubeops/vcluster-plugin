@@ -4,30 +4,38 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/ghodss/yaml"
 	"github.com/loft-sh/log/logr"
+	config2 "github.com/loft-sh/vcluster/config"
+	"github.com/loft-sh/vcluster/pkg/config"
 	"github.com/loft-sh/vcluster/pkg/controllers/syncer"
 	synccontext "github.com/loft-sh/vcluster/pkg/controllers/syncer/context"
+	"github.com/loft-sh/vcluster/pkg/plugin"
 	"github.com/loft-sh/vcluster/pkg/plugin/types"
 	v2 "github.com/loft-sh/vcluster/pkg/plugin/v2"
 	"github.com/loft-sh/vcluster/pkg/scheme"
 	"github.com/loft-sh/vcluster/pkg/setup"
-	"github.com/loft-sh/vcluster/pkg/setup/options"
 	syncertypes "github.com/loft-sh/vcluster/pkg/types"
 	"github.com/loft-sh/vcluster/pkg/util/clienthelper"
 	contextutil "github.com/loft-sh/vcluster/pkg/util/context"
-	"github.com/loft-sh/vcluster/pkg/util/translate"
 	"github.com/pkg/errors"
+	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlmanager "sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 func newManager() Manager {
-	return &manager{}
+	return &manager{
+		interceptorsHandlers: make(map[string]http.Handler),
+	}
 }
 
 type manager struct {
@@ -43,6 +51,14 @@ type manager struct {
 	pluginServer server
 
 	syncers []syncertypes.Base
+
+	interceptorsHandlers map[string]http.Handler
+	interceptors         []Interceptor
+	interceptorsPort     int
+
+	proConfig v2.InitConfigPro
+
+	options Options
 }
 
 func (m *manager) UnmarshalConfig(into interface{}) error {
@@ -54,11 +70,18 @@ func (m *manager) UnmarshalConfig(into interface{}) error {
 	return nil
 }
 
+func (m *manager) ProConfig() v2.InitConfigPro {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	return m.proConfig
+}
+
 func (m *manager) Init() (*synccontext.RegisterContext, error) {
 	return m.InitWithOptions(Options{})
 }
 
-func (m *manager) InitWithOptions(opts Options) (*synccontext.RegisterContext, error) {
+func (m *manager) InitWithOptions(options Options) (*synccontext.RegisterContext, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -66,6 +89,12 @@ func (m *manager) InitWithOptions(opts Options) (*synccontext.RegisterContext, e
 		return nil, fmt.Errorf("plugin manager is already initialized")
 	}
 	m.initialized = true
+	m.options = options
+
+	// set code globals
+	plugin.IsPlugin = true
+	setup.NewLocalManager = m.newLocalManager
+	setup.NewVirtualManager = m.newVirtualManager
 
 	// create a new plugin server
 	var err error
@@ -86,6 +115,7 @@ func (m *manager) InitWithOptions(opts Options) (*synccontext.RegisterContext, e
 	if err != nil {
 		return nil, fmt.Errorf("error decoding init config %s: %w", initRequest.Config, err)
 	}
+	m.interceptorsPort = initConfig.Port
 
 	// try to change working dir
 	if initConfig.WorkingDir != "" {
@@ -110,45 +140,60 @@ func (m *manager) InitWithOptions(opts Options) (*synccontext.RegisterContext, e
 	ctx := klog.NewContext(context.Background(), logger)
 
 	// now create register context
-	virtualClusterOptions := &options.VirtualClusterOptions{}
-	err = json.Unmarshal(initConfig.Options, virtualClusterOptions)
+	virtualClusterConfig := &config.VirtualClusterConfig{}
+	err = json.Unmarshal(initConfig.Config, virtualClusterConfig)
 	if err != nil {
-		return nil, errors.Wrap(err, "unmarshal vcluster options")
+		return nil, errors.Wrap(err, "unmarshal vCluster config")
 	}
 
-	// set vcluster name correctly
-	if virtualClusterOptions.Name != "" {
-		translate.VClusterName = virtualClusterOptions.Name
+	// parse workload & control plane client
+	virtualClusterConfig.WorkloadConfig, err = bytesToRestConfig(initConfig.WorkloadConfig)
+	if err != nil {
+		return nil, fmt.Errorf("parse workload config: %w", err)
+	}
+	virtualClusterConfig.ControlPlaneConfig, err = bytesToRestConfig(initConfig.ControlPlaneConfig)
+	if err != nil {
+		return nil, fmt.Errorf("parse control plane config: %w", err)
+	}
+
+	// we disable plugin loading
+	virtualClusterConfig.Plugin = map[string]config2.Plugin{}
+	virtualClusterConfig.Plugins = map[string]config2.Plugins{}
+
+	// init virtual cluster config
+	err = setup.InitAndValidateConfig(ctx, virtualClusterConfig)
+	if err != nil {
+		return nil, fmt.Errorf("init config: %w", err)
 	}
 
 	// parse clients
-	physicalConfig, err := clientcmd.NewClientConfigFromBytes(initConfig.PhysicalClusterConfig)
-	if err != nil {
-		return nil, errors.Wrap(err, "parse physical kube config")
-	}
-	restPhysicalConfig, err := physicalConfig.ClientConfig()
-	if err != nil {
-		return nil, errors.Wrap(err, "parse physical kube config rest")
-	}
 	m.syncerConfig, err = clientcmd.NewClientConfigFromBytes(initConfig.SyncerConfig)
 	if err != nil {
 		return nil, errors.Wrap(err, "parse syncer kube config")
 	}
 
-	// we disable plugin loading and create a new controller context
-	virtualClusterOptions.DisablePlugins = true
-	controllerCtx, err := setup.NewControllerContext(ctx, virtualClusterOptions, initConfig.CurrentNamespace, restPhysicalConfig, scheme.Scheme, opts.NewClient, opts.NewClient)
+	// create new controller context
+	controllerCtx, err := setup.NewControllerContext(ctx, virtualClusterConfig)
 	if err != nil {
 		return nil, fmt.Errorf("create controller context: %w", err)
 	}
 
 	m.context = contextutil.ToRegisterContext(controllerCtx)
+	m.proConfig = initConfig.Pro
 	return m.context, nil
 }
 
 func (m *manager) Register(syncer syncertypes.Base) error {
 	m.m.Lock()
 	defer m.m.Unlock()
+
+	if int, ok := syncer.(Interceptor); ok {
+		if _, ok := m.interceptorsHandlers[int.Name()]; ok {
+			return fmt.Errorf("could not add the interceptor %s because its name is already in use", int.Name())
+		}
+		m.interceptorsHandlers[int.Name()] = int
+		m.interceptors = append(m.interceptors, int)
+	}
 
 	m.syncers = append(m.syncers, syncer)
 	return nil
@@ -162,6 +207,33 @@ func (m *manager) Start() error {
 
 	<-m.context.Context.Done()
 	return nil
+}
+
+func (m *manager) StartAsync() (<-chan struct{}, error) {
+	err := m.start()
+	if err != nil {
+		return nil, err
+	}
+
+	return m.context.Context.Done(), nil
+}
+
+func (m *manager) startInterceptors() error {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handlerName := r.Header.Get("VCluster-Plugin-Handler-Name")
+		if handlerName == "" {
+			responsewriters.InternalError(w, r, errors.New("header VCluster-Plugin-Handler-Name wasn't set"))
+			return
+		}
+		interceptorHandler, ok := m.interceptorsHandlers[handlerName]
+		if !ok {
+			responsewriters.InternalError(w, r, errors.New("header VCluster-Plugin-Handler-Name had no match"))
+			return
+		}
+		interceptorHandler.ServeHTTP(w, r)
+	})
+
+	return http.ListenAndServe("127.0.0.1:"+strconv.Itoa(m.interceptorsPort), handler)
 }
 
 func (m *manager) start() error {
@@ -179,9 +251,23 @@ func (m *manager) start() error {
 		return fmt.Errorf("find all hooks: %w", err)
 	}
 
-	// signal we are ready
-	m.pluginServer.SetReady(hooks)
+	// find the interceptors
+	interceptors := m.findAllInterceptors()
 
+	// signal we are ready
+	m.pluginServer.SetReady(hooks, interceptors, m.interceptorsPort)
+
+	if len(m.interceptors) > 0 {
+		go func() {
+			// we need to start them regardless of being the leader, since the traffic is
+			// directed to all replicas
+			err := m.startInterceptors()
+			if err != nil {
+				klog.Error(err, "error while running the http interceptors:")
+				os.Exit(1)
+			}
+		}()
+	}
 	// wait until we are leader to continue
 	<-m.pluginServer.IsLeader()
 
@@ -210,7 +296,8 @@ func (m *manager) start() error {
 	go func() {
 		err := m.context.PhysicalManager.Start(m.context.Context)
 		if err != nil {
-			panic(err)
+			klog.Errorf("Starting physical manager: %v", err)
+			Exit(1)
 		}
 	}()
 
@@ -218,26 +305,14 @@ func (m *manager) start() error {
 	go func() {
 		err := m.context.VirtualManager.Start(m.context.Context)
 		if err != nil {
-			panic(err)
+			klog.Errorf("Starting virtual manager: %v", err)
+			Exit(1)
 		}
 	}()
 
 	// Wait for caches to be synced
 	m.context.PhysicalManager.GetCache().WaitForCacheSync(m.context.Context)
 	m.context.VirtualManager.GetCache().WaitForCacheSync(m.context.Context)
-
-	// set global owner
-	err = setup.SetGlobalOwner(
-		m.context.Context,
-		m.context.CurrentNamespaceClient,
-		m.context.CurrentNamespace,
-		m.context.Options.TargetNamespace,
-		m.context.Options.SetOwner,
-		m.context.Options.ServiceName,
-	)
-	if err != nil {
-		return fmt.Errorf("error in setting owner reference %v", err)
-	}
 
 	// start syncers
 	for _, v := range m.syncers {
@@ -274,6 +349,11 @@ func (m *manager) start() error {
 
 	klog.Infof("Successfully started plugin.")
 	return nil
+}
+
+func (m *manager) findAllInterceptors() []Interceptor {
+	klog.Info("len of m.interceptor is : ", len(m.interceptors))
+	return m.interceptors
 }
 
 func (m *manager) findAllHooks() (map[types.VersionKindType][]ClientHook, error) {
@@ -367,4 +447,35 @@ func (m *manager) findAllHooks() (map[types.VersionKindType][]ClientHook, error)
 	}
 
 	return hooks, nil
+}
+
+func (m *manager) newLocalManager(config *rest.Config, options ctrlmanager.Options) (ctrlmanager.Manager, error) {
+	options.Metrics.BindAddress = "0"
+	if m.options.ModifyHostManager != nil {
+		m.options.ModifyHostManager(&options)
+	}
+
+	return ctrlmanager.New(config, options)
+}
+
+func (m *manager) newVirtualManager(config *rest.Config, options ctrlmanager.Options) (ctrlmanager.Manager, error) {
+	options.Metrics.BindAddress = "0"
+	if m.options.ModifyVirtualManager != nil {
+		m.options.ModifyVirtualManager(&options)
+	}
+
+	return ctrlmanager.New(config, options)
+}
+
+func bytesToRestConfig(rawBytes []byte) (*rest.Config, error) {
+	if len(rawBytes) == 0 {
+		return nil, fmt.Errorf("kube client config is empty")
+	}
+
+	parsedConfig, err := clientcmd.NewClientConfigFromBytes(rawBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse kube config: %w", err)
+	}
+
+	return parsedConfig.ClientConfig()
 }

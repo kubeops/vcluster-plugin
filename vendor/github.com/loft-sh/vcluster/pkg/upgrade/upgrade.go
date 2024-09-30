@@ -90,6 +90,10 @@ func CheckForNewerVersion() (string, error) {
 
 // NewerVersionAvailable checks if there is a newer version of vcluster
 func NewerVersionAvailable() string {
+	if GetVersion() == DevelopmentVersion {
+		return ""
+	}
+
 	// Get version of current binary
 	version := GetVersion()
 	if version != "" {
@@ -113,8 +117,14 @@ func NewerVersionAvailable() string {
 
 // Upgrade downloads the latest release from github and replaces vcluster if a new version is found
 func Upgrade(flagVersion string, log log.Logger) error {
+	updater, err := selfupdate.NewUpdater(selfupdate.Config{
+		Filters: []string{"vcluster"},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to initialize updater: %w", err)
+	}
 	if flagVersion != "" {
-		release, found, err := selfupdate.DetectVersion(githubSlug, flagVersion)
+		release, found, err := updater.DetectVersion(githubSlug, flagVersion)
 		if err != nil {
 			return errors.Wrap(err, "find version")
 		} else if !found {
@@ -127,7 +137,7 @@ func Upgrade(flagVersion string, log log.Logger) error {
 		}
 
 		log.Infof("Downloading version %s...", flagVersion)
-		err = selfupdate.DefaultUpdater().UpdateTo(release, cmdPath)
+		err = updater.UpdateTo(release, cmdPath)
 		if err != nil {
 			return err
 		}
@@ -148,7 +158,7 @@ func Upgrade(flagVersion string, log log.Logger) error {
 	v := semver.MustParse(version)
 
 	log.Info("Downloading newest version...")
-	latest, err := selfupdate.UpdateSelf(v, githubSlug)
+	latest, err := updater.UpdateSelf(v, githubSlug)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 	"text/template"
 
 	"github.com/loft-sh/vcluster/pkg/constants"
@@ -15,7 +16,7 @@ import (
 )
 
 const (
-	DefaultImage          = "coredns/coredns:1.11.0"
+	DefaultImage          = "coredns/coredns:1.11.3"
 	ManifestRelativePath  = "coredns/coredns.yaml"
 	ManifestsOutputFolder = "/tmp/manifests-to-apply"
 	VarImage              = "IMAGE"
@@ -68,7 +69,9 @@ func getManifestVariables(defaultImageRegistry string, serverVersion *version.In
 	if !found {
 		vars[VarImage] = DefaultImage
 	}
-	vars[VarImage] = defaultImageRegistry + vars[VarImage].(string)
+	if defaultImageRegistry != "" {
+		vars[VarImage] = strings.TrimSuffix(defaultImageRegistry, "/") + "/" + vars[VarImage].(string)
+	}
 	vars[VarRunAsUser] = fmt.Sprintf("%v", GetUserID())
 	vars[VarRunAsGroup] = fmt.Sprintf("%v", GetGroupID())
 	if os.Getenv("DEBUG") == "true" {

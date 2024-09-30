@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/loft-sh/vcluster/config/legacyconfig"
 	plugintypes "github.com/loft-sh/vcluster/pkg/plugin/types"
-	"github.com/loft-sh/vcluster/pkg/setup/options"
 	"github.com/loft-sh/vcluster/pkg/util/kubeconfig"
 	"github.com/loft-sh/vcluster/pkg/util/loghelper"
 	"github.com/loft-sh/vcluster/pkg/util/random"
@@ -120,7 +120,7 @@ func (m *Manager) MutateObject(ctx context.Context, obj client.Object, hookType 
 }
 
 func (m *Manager) mutateObject(ctx context.Context, versionKindType plugintypes.VersionKindType, obj []byte, plugin *Plugin) ([]byte, error) {
-	conn, err := grpc.Dial(plugin.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(plugin.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, fmt.Errorf("error dialing plugin %s: %w", plugin.Name, err)
 	}
@@ -166,7 +166,7 @@ func (m *Manager) Start(
 	virtualKubeConfig *rest.Config,
 	physicalKubeConfig *rest.Config,
 	syncerConfig *clientcmdapi.Config,
-	options *options.VirtualClusterOptions,
+	options *legacyconfig.LegacyVirtualClusterOptions,
 ) error {
 	// set if we have plugins
 	m.hasPlugins.Store(len(options.Plugins) > 0)
@@ -239,7 +239,7 @@ func (m *Manager) Start(
 	return m.waitForPlugins(ctx, options)
 }
 
-func (m *Manager) waitForPlugins(ctx context.Context, options *options.VirtualClusterOptions) error {
+func (m *Manager) waitForPlugins(ctx context.Context, options *legacyconfig.LegacyVirtualClusterOptions) error {
 	for _, plugin := range options.Plugins {
 		klog.Infof("Waiting for plugin %s to register...", plugin)
 		err := wait.PollUntilContextTimeout(ctx, time.Millisecond*100, time.Minute*10, true, func(context.Context) (done bool, err error) {
