@@ -18,10 +18,19 @@ import (
 )
 
 func NewNamespacedTranslator(ctx *context.RegisterContext, name string, obj client.Object, excludedAnnotations ...string) NamespacedTranslator {
-	return &namespacedTranslator{
-		name: name,
+	return newNamespacedTranslator(ctx, name, obj, translate.Default.PhysicalName, excludedAnnotations...)
+}
 
-		syncedLabels:        ctx.Options.SyncLabels,
+func NewShortNamespacedTranslator(ctx *context.RegisterContext, name string, obj client.Object, excludedAnnotations ...string) NamespacedTranslator {
+	return newNamespacedTranslator(ctx, name, obj, translate.Default.PhysicalNameShort, excludedAnnotations...)
+}
+
+func newNamespacedTranslator(ctx *context.RegisterContext, name string, obj client.Object, translateName translate.PhysicalNameFunc, excludedAnnotations ...string) NamespacedTranslator {
+	return &namespacedTranslator{
+		name:          name,
+		translateName: translateName,
+
+		syncedLabels:        ctx.Config.Experimental.SyncSettings.SyncLabels,
 		excludedAnnotations: excludedAnnotations,
 
 		virtualClient: ctx.VirtualManager.GetClient(),
@@ -34,18 +43,15 @@ func NewNamespacedTranslator(ctx *context.RegisterContext, name string, obj clie
 type namespacedTranslator struct {
 	name string
 
-	nameTranslator      translate.PhysicalNamespacedNameTranslator
 	excludedAnnotations []string
 	syncedLabels        []string
 
 	virtualClient client.Client
 	obj           client.Object
 
-	eventRecorder record.EventRecorder
-}
+	translateName translate.PhysicalNameFunc
 
-func (n *namespacedTranslator) SetNameTranslator(nameTranslator translate.PhysicalNamespacedNameTranslator) {
-	n.nameTranslator = nameTranslator
+	eventRecorder record.EventRecorder
 }
 
 func (n *namespacedTranslator) EventRecorder() record.EventRecorder {
@@ -62,7 +68,7 @@ func (n *namespacedTranslator) Resource() client.Object {
 
 func (n *namespacedTranslator) RegisterIndices(ctx *context.RegisterContext) error {
 	return ctx.VirtualManager.GetFieldIndexer().IndexField(ctx.Context, n.obj.DeepCopyObject().(client.Object), constants.IndexByPhysicalName, func(rawObj client.Object) []string {
-		return []string{translate.Default.PhysicalNamespace(rawObj.GetNamespace()) + "/" + translate.Default.PhysicalName(rawObj.GetName(), rawObj.GetNamespace())}
+		return []string{translate.Default.PhysicalNamespace(rawObj.GetNamespace()) + "/" + n.translateName(rawObj.GetName(), rawObj.GetNamespace())}
 	})
 }
 
@@ -88,9 +94,9 @@ func (n *namespacedTranslator) SyncToHostUpdate(ctx *context.SyncContext, vObj, 
 		ctx.Log.Infof("updating physical %s/%s, because virtual %s have changed", pObj.GetNamespace(), pObj.GetName(), n.name)
 		err := ctx.PhysicalClient.Update(ctx.Context, pObj)
 		if kerrors.IsConflict(err) {
+			ctx.Log.Debugf("conflict syncing physical %s %s/%s", n.name, pObj.GetNamespace(), pObj.GetName())
 			return ctrl.Result{Requeue: true}, nil
-		}
-		if err != nil {
+		} else if err != nil {
 			n.eventRecorder.Eventf(vObj, "Warning", "SyncError", "Error syncing to physical cluster: %v", err)
 			return ctrl.Result{}, err
 		}
@@ -100,18 +106,13 @@ func (n *namespacedTranslator) SyncToHostUpdate(ctx *context.SyncContext, vObj, 
 }
 
 func (n *namespacedTranslator) IsManaged(_ context2.Context, pObj client.Object) (bool, error) {
-	return translate.Default.IsManaged(pObj), nil
+	return translate.Default.IsManaged(pObj, n.translateName), nil
 }
 
-func (n *namespacedTranslator) VirtualToHost(_ context2.Context, req types.NamespacedName, vObj client.Object) types.NamespacedName {
-	name := translate.Default.PhysicalName(req.Name, req.Namespace)
-	if n.nameTranslator != nil {
-		name = n.nameTranslator(req, vObj)
-	}
-
+func (n *namespacedTranslator) VirtualToHost(_ context2.Context, req types.NamespacedName, _ client.Object) types.NamespacedName {
 	return types.NamespacedName{
 		Namespace: translate.Default.PhysicalNamespace(req.Namespace),
-		Name:      name,
+		Name:      n.translateName(req.Name, req.Namespace),
 	}
 }
 

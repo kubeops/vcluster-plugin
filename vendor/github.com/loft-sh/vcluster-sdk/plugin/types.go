@@ -2,20 +2,21 @@ package plugin
 
 import (
 	"context"
+	"net/http"
 
 	synccontext "github.com/loft-sh/vcluster/pkg/controllers/syncer/context"
+	v2 "github.com/loft-sh/vcluster/pkg/plugin/v2"
 	syncertypes "github.com/loft-sh/vcluster/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlmanager "sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 type Options struct {
-	// NewClient allows a user to define how to create a client.
-	NewClient client.NewClientFunc
+	// ModifyVirtualManager modifies options for the virtual manager
+	ModifyVirtualManager func(options *ctrlmanager.Options)
 
-	// NewCache is the function that will create the cache to be used
-	// by the manager. If not set this will use the default new cache function.
-	NewCache cache.NewCacheFunc
+	// ModifyHostManager modifies options for the host manager
+	ModifyHostManager func(options *ctrlmanager.Options)
 }
 
 type Manager interface {
@@ -36,9 +37,18 @@ type Manager interface {
 	// will stop if the pod will lose leader election.
 	Start() error
 
+	// Start runs all the registered syncers and will not block. It only executes
+	// the functionality if the current vcluster pod is the current leader
+	// You need to exit the plugin when the channel is closed since that means you lost
+	// leader election
+	StartAsync() (<-chan struct{}, error)
+
 	// UnmarshalConfig retrieves the plugin config from environment and parses it into
 	// the given object.
 	UnmarshalConfig(into interface{}) error
+
+	// ProConfig returns the pro config retrieved by vCluster.Pro
+	ProConfig() v2.InitConfigPro
 }
 
 // ClientHook tells the sdk that this action watches on certain vcluster requests and wants
@@ -53,6 +63,16 @@ type ClientHook interface {
 
 	// Resource is the typed resource (e.g. &corev1.Pod{}) that should get mutated.
 	Resource() client.Object
+}
+
+type Interceptor interface {
+	syncertypes.Base
+
+	// Handler is the handler that will handle the requests delegated by the syncer
+	http.Handler
+
+	// InterceptionRules returns an rbac style struct which defines what to intercept
+	InterceptionRules() []v2.InterceptorRule
 }
 
 type MutateCreateVirtual interface {

@@ -3,8 +3,8 @@ package v2
 import (
 	"context"
 
+	"github.com/loft-sh/vcluster/pkg/config"
 	plugintypes "github.com/loft-sh/vcluster/pkg/plugin/types"
-	"github.com/loft-sh/vcluster/pkg/setup/options"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -19,7 +19,7 @@ type Plugin interface {
 		virtualKubeConfig *rest.Config,
 		physicalKubeConfig *rest.Config,
 		syncerConfig *clientcmdapi.Config,
-		options *options.VirtualClusterOptions,
+		vConfig *config.VirtualClusterConfig,
 	) error
 
 	// SetLeader signals the plugin that the syncer acquired leadership and starts executing controllers

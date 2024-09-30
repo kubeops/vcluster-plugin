@@ -7,13 +7,13 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog/v2"
 
 	synccontext "github.com/loft-sh/vcluster/pkg/controllers/syncer/context"
 	"github.com/loft-sh/vcluster/pkg/controllers/syncer/translator"
 	syncer "github.com/loft-sh/vcluster/pkg/types"
 
 	translatepods "github.com/loft-sh/vcluster/pkg/controllers/resources/pods/translate"
-	"github.com/loft-sh/vcluster/pkg/util/loghelper"
 	"github.com/loft-sh/vcluster/pkg/util/toleration"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -49,21 +49,16 @@ func New(ctx *synccontext.RegisterContext) (syncer.Object, error) {
 
 	// parse node selector
 	var nodeSelector *metav1.LabelSelector
-	if ctx.Options.EnforceNodeSelector && ctx.Options.NodeSelector != "" {
-		nodeSelector, err = metav1.ParseToLabelSelector(ctx.Options.NodeSelector)
-		if err != nil {
-			return nil, errors.Wrap(err, "parse node selector")
-		} else if len(nodeSelector.MatchExpressions) > 0 {
-			return nil, errors.New("match expressions in the node selector are not supported")
-		} else if len(nodeSelector.MatchLabels) == 0 {
-			return nil, errors.New("at least one label=value pair has to be defined in the label selector")
+	if len(ctx.Config.Sync.FromHost.Nodes.Selector.Labels) > 0 {
+		nodeSelector = &metav1.LabelSelector{
+			MatchLabels: ctx.Config.Sync.FromHost.Nodes.Selector.Labels,
 		}
 	}
 
 	// parse tolerations
 	var tolerations []*corev1.Toleration
-	if len(ctx.Options.Tolerations) > 0 {
-		for _, t := range ctx.Options.Tolerations {
+	if len(ctx.Config.Sync.ToHost.Pods.EnforceTolerations) > 0 {
+		for _, t := range ctx.Config.Sync.ToHost.Pods.EnforceTolerations {
 			tol, err := toleration.ParseToleration(t)
 			if err == nil {
 				tolerations = append(tolerations, &tol)
@@ -83,8 +78,8 @@ func New(ctx *synccontext.RegisterContext) (syncer.Object, error) {
 	return &podSyncer{
 		NamespacedTranslator: namespacedTranslator,
 
-		serviceName:     ctx.Options.ServiceName,
-		enableScheduler: ctx.Options.EnableScheduler,
+		serviceName:     ctx.Config.WorkloadService,
+		enableScheduler: ctx.Config.ControlPlane.Advanced.VirtualScheduler.Enabled,
 
 		virtualClusterClient:  virtualClusterClient,
 		physicalClusterClient: physicalClusterClient,
@@ -93,7 +88,7 @@ func New(ctx *synccontext.RegisterContext) (syncer.Object, error) {
 		nodeSelector:          nodeSelector,
 		tolerations:           tolerations,
 
-		podSecurityStandard: ctx.Options.EnforcePodSecurityStandard,
+		podSecurityStandard: ctx.Config.Policies.PodSecurityStandard,
 	}, nil
 }
 
@@ -121,9 +116,9 @@ func (s *podSyncer) RegisterIndices(ctx *synccontext.RegisterContext) error {
 
 var _ syncer.ControllerModifier = &podSyncer{}
 
-func (s *podSyncer) ModifyController(ctx *synccontext.RegisterContext, builder *builder.Builder) (*builder.Builder, error) {
+func (s *podSyncer) ModifyController(registerContext *synccontext.RegisterContext, builder *builder.Builder) (*builder.Builder, error) {
 	eventHandler := handler.Funcs{
-		UpdateFunc: func(cont context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+		UpdateFunc: func(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 			// no need to reconcile pods if namespace labels didn't change
 			if reflect.DeepEqual(e.ObjectNew.GetLabels(), e.ObjectOld.GetLabels()) {
 				return
@@ -131,10 +126,9 @@ func (s *podSyncer) ModifyController(ctx *synccontext.RegisterContext, builder *
 
 			ns := e.ObjectNew.GetName()
 			pods := &corev1.PodList{}
-			err := ctx.VirtualManager.GetClient().List(cont, pods, client.InNamespace(ns))
+			err := registerContext.VirtualManager.GetClient().List(ctx, pods, client.InNamespace(ns))
 			if err != nil {
-				log := loghelper.New("pods-syncer-ns-watch-handler")
-				log.Infof("failed to list pods in the %s namespace when handling namespace update: %v", ns, err)
+				klog.FromContext(ctx).Info("failed to list pods in the namespace when handling namespace update", "namespace", ns, "error", err)
 				return
 			}
 			for _, pod := range pods.Items {
@@ -153,6 +147,7 @@ var _ syncer.Syncer = &podSyncer{}
 
 func (s *podSyncer) SyncToHost(ctx *synccontext.SyncContext, vObj client.Object) (ctrl.Result, error) {
 	vPod := vObj.(*corev1.Pod)
+
 	// in some scenarios it is possible that the pod was already started and the physical pod
 	// was deleted without vcluster's knowledge. In this case we are deleting the virtual pod
 	// as well, to avoid conflicts with nodes if we would resync the same pod to the host cluster again.
@@ -263,9 +258,9 @@ func (s *podSyncer) Sync(ctx *synccontext.SyncContext, pObj client.Object, vObj 
 	if pPod.Spec.NodeName != "" {
 		requeue, err := s.ensureNode(ctx, pPod, vPod)
 		if kerrors.IsConflict(err) {
+			ctx.Log.Debugf("conflict binding virtual pod %s/%s", vPod.GetNamespace(), vPod.GetName())
 			return ctrl.Result{Requeue: true}, nil
-		}
-		if err != nil {
+		} else if err != nil {
 			return ctrl.Result{}, err
 		} else if requeue {
 			return ctrl.Result{Requeue: true}, nil
@@ -299,9 +294,9 @@ func (s *podSyncer) Sync(ctx *synccontext.SyncContext, pObj client.Object, vObj 
 		translator.PrintChanges(vPod, newPod, ctx.Log)
 		err := ctx.VirtualClient.Status().Update(ctx.Context, newPod)
 		if kerrors.IsConflict(err) {
+			ctx.Log.Debugf("conflict updating virtual pod %s %s/%s", vPod.GetNamespace(), vPod.GetName())
 			return ctrl.Result{Requeue: true}, nil
-		}
-		if err != nil {
+		} else if err != nil {
 			s.EventRecorder().Eventf(vObj, "Warning", "SyncError", "Error updating pod: %v", err)
 			return ctrl.Result{}, err
 		}
@@ -318,7 +313,7 @@ func (s *podSyncer) Sync(ctx *synccontext.SyncContext, pObj client.Object, vObj 
 		// translate services to environment variables
 		serviceEnv := translatepods.ServicesToEnvironmentVariables(vPod.Spec.EnableServiceLinks, ptrServiceList, kubeIP)
 		for i := range vPod.Spec.EphemeralContainers {
-			envVar, envFrom := translatepods.ContainerEnv(vPod.Spec.EphemeralContainers[i].Env, vPod.Spec.EphemeralContainers[i].EnvFrom, vPod, serviceEnv)
+			envVar, envFrom := s.podTranslator.TranslateContainerEnv(vPod.Spec.EphemeralContainers[i].Env, vPod.Spec.EphemeralContainers[i].EnvFrom, vPod, serviceEnv)
 			vPod.Spec.EphemeralContainers[i].Env = envVar
 			vPod.Spec.EphemeralContainers[i].EnvFrom = envFrom
 		}

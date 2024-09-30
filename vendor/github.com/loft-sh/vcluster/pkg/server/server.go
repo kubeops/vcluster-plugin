@@ -14,14 +14,15 @@ import (
 	"github.com/loft-sh/vcluster/pkg/authorization/delegatingauthorizer"
 	"github.com/loft-sh/vcluster/pkg/authorization/impersonationauthorizer"
 	"github.com/loft-sh/vcluster/pkg/authorization/kubeletauthorizer"
+	"github.com/loft-sh/vcluster/pkg/config"
 	"github.com/loft-sh/vcluster/pkg/constants"
 	"github.com/loft-sh/vcluster/pkg/controllers/resources/nodes"
 	"github.com/loft-sh/vcluster/pkg/controllers/resources/nodes/nodeservice"
+	"github.com/loft-sh/vcluster/pkg/plugin"
 	"github.com/loft-sh/vcluster/pkg/server/cert"
 	"github.com/loft-sh/vcluster/pkg/server/filters"
 	"github.com/loft-sh/vcluster/pkg/server/handler"
 	servertypes "github.com/loft-sh/vcluster/pkg/server/types"
-	"github.com/loft-sh/vcluster/pkg/setup/options"
 	"github.com/loft-sh/vcluster/pkg/util/blockingcacheclient"
 	"github.com/loft-sh/vcluster/pkg/util/pluginhookclient"
 	"github.com/loft-sh/vcluster/pkg/util/serverhelper"
@@ -60,25 +61,21 @@ import (
 
 // Server is a http.Handler which proxies Kubernetes APIs to remote API server.
 type Server struct {
-	uncachedVirtualClient client.Client
-	cachedVirtualClient   client.Client
-
-	currentNamespace       string
+	uncachedVirtualClient  client.Client
+	cachedVirtualClient    client.Client
 	currentNamespaceClient client.Client
-
-	fakeKubeletIPs bool
-
-	certSyncer cert.Syncer
-	handler    *http.ServeMux
-
-	redirectResources   []delegatingauthorizer.GroupVersionResourceVerb
-	requestHeaderCaFile string
-	clientCaFile        string
+	certSyncer             cert.Syncer
+	handler                *http.ServeMux
+	currentNamespace       string
+	requestHeaderCaFile    string
+	clientCaFile           string
+	redirectResources      []delegatingauthorizer.GroupVersionResourceVerb
+	fakeKubeletIPs         bool
 }
 
 // NewServer creates and installs a new Server.
 // 'filter', if non-nil, protects requests to the api only.
-func NewServer(ctx *options.ControllerContext, requestHeaderCaFile, clientCaFile string) (*Server, error) {
+func NewServer(ctx *config.ControllerContext, requestHeaderCaFile, clientCaFile string) (*Server, error) {
 	localConfig := ctx.LocalManager.GetConfig()
 	virtualConfig := ctx.VirtualManager.GetConfig()
 	uncachedLocalClient, err := client.New(localConfig, client.Options{
@@ -96,8 +93,8 @@ func NewServer(ctx *options.ControllerContext, requestHeaderCaFile, clientCaFile
 		return nil, err
 	}
 
-	cachedLocalClient, err := createCachedClient(ctx.Context, localConfig, ctx.CurrentNamespace, uncachedLocalClient.RESTMapper(), uncachedLocalClient.Scheme(), func(cache cache.Cache) error {
-		if ctx.Options.FakeKubeletIPs {
+	cachedLocalClient, err := createCachedClient(ctx.Context, localConfig, ctx.Config.WorkloadNamespace, uncachedLocalClient.RESTMapper(), uncachedLocalClient.Scheme(), func(cache cache.Cache) error {
+		if ctx.Config.Networking.Advanced.ProxyKubelets.ByIP {
 			err := cache.IndexField(ctx.Context, &corev1.Service{}, constants.IndexByClusterIP, func(object client.Object) []string {
 				svc := object.(*corev1.Service)
 				if len(svc.Labels) == 0 || svc.Labels[nodeservice.ServiceClusterLabel] != translate.VClusterName {
@@ -113,7 +110,6 @@ func NewServer(ctx *options.ControllerContext, requestHeaderCaFile, clientCaFile
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +122,7 @@ func NewServer(ctx *options.ControllerContext, requestHeaderCaFile, clientCaFile
 		}
 
 		err = cache.IndexField(ctx.Context, &corev1.Node{}, constants.IndexByHostName, func(rawObj client.Object) []string {
-			return []string{nodes.GetNodeHost(rawObj.GetName()), nodes.GetNodeHostLegacy(rawObj.GetName(), ctx.CurrentNamespace)}
+			return []string{nodes.GetNodeHost(rawObj.GetName()), nodes.GetNodeHostLegacy(rawObj.GetName(), ctx.Config.WorkloadNamespace)}
 		})
 		if err != nil {
 			return err
@@ -150,7 +146,7 @@ func NewServer(ctx *options.ControllerContext, requestHeaderCaFile, clientCaFile
 	uncachedLocalClient = pluginhookclient.WrapPhysicalClient(uncachedLocalClient)
 	cachedLocalClient = pluginhookclient.WrapPhysicalClient(cachedLocalClient)
 
-	certSyncer, err := cert.NewSyncer(ctx.Context, ctx.CurrentNamespace, cachedLocalClient, ctx.Options)
+	certSyncer, err := cert.NewSyncer(ctx.Context, ctx.Config.WorkloadNamespace, cachedLocalClient, ctx.Config)
 	if err != nil {
 		return nil, errors.Wrap(err, "create cert syncer")
 	}
@@ -161,9 +157,9 @@ func NewServer(ctx *options.ControllerContext, requestHeaderCaFile, clientCaFile
 		certSyncer:            certSyncer,
 		handler:               http.NewServeMux(),
 
-		fakeKubeletIPs: ctx.Options.FakeKubeletIPs,
+		fakeKubeletIPs: ctx.Config.Networking.Advanced.ProxyKubelets.ByIP,
 
-		currentNamespace:       ctx.CurrentNamespace,
+		currentNamespace:       ctx.Config.WorkloadNamespace,
 		currentNamespaceClient: cachedLocalClient,
 
 		requestHeaderCaFile: requestHeaderCaFile,
@@ -204,24 +200,26 @@ func NewServer(ctx *options.ControllerContext, requestHeaderCaFile, clientCaFile
 	}
 
 	h := handler.ImpersonatingHandler("", virtualConfig)
-	h = filters.WithServiceCreateRedirect(h, uncachedLocalClient, uncachedVirtualClient, virtualConfig, ctx.Options.SyncLabels)
+
+	// pre hooks
+	clients := config.Clients{
+		UncachedVirtualClient: uncachedVirtualClient,
+		CachedVirtualClient:   cachedVirtualClient,
+		UncachedHostClient:    uncachedLocalClient,
+		CachedHostClient:      cachedLocalClient,
+		HostConfig:            localConfig,
+		VirtualConfig:         virtualConfig,
+	}
+	for _, f := range ctx.PreServerHooks {
+		h = f(h, clients)
+	}
+
+	h = filters.WithServiceCreateRedirect(h, uncachedLocalClient, uncachedVirtualClient, virtualConfig, ctx.Config.Experimental.SyncSettings.SyncLabels)
 	h = filters.WithRedirect(h, localConfig, uncachedLocalClient.Scheme(), uncachedVirtualClient, admissionHandler, s.redirectResources)
 	h = filters.WithMetricsProxy(h, localConfig, cachedVirtualClient)
 
-	// is metrics proxy enabled?
-	if ctx.Options.ProxyMetricsServer {
-		h = filters.WithMetricsServerProxy(
-			h,
-			ctx.Options.TargetNamespace,
-			cachedLocalClient,
-			cachedVirtualClient,
-			localConfig,
-			virtualConfig,
-			ctx.Options.MultiNamespaceMode,
-		)
-	}
-
-	if ctx.Options.DeprecatedSyncNodeChanges {
+	// inject apis
+	if ctx.Config.Sync.FromHost.Nodes.Enabled && ctx.Config.Sync.FromHost.Nodes.SyncBackChanges {
 		h = filters.WithNodeChanges(ctx.Context, h, uncachedLocalClient, uncachedVirtualClient, virtualConfig)
 	}
 	h = filters.WithFakeKubelet(h, localConfig, cachedVirtualClient)
@@ -231,18 +229,12 @@ func NewServer(ctx *options.ControllerContext, requestHeaderCaFile, clientCaFile
 		h = filters.WithPprof(h)
 	}
 
-	for _, f := range ctx.AdditionalServerFilters {
-		h = f(h, servertypes.FilterOptions{
-			LocalScheme: uncachedLocalClient.Scheme(),
-		})
-	}
-
-	for _, handler := range ctx.ExtraHandlers {
-		h = handler(h)
+	// post hooks
+	for _, f := range ctx.PostServerHooks {
+		h = f(h, clients)
 	}
 
 	serverhelper.HandleRoute(s.handler, "/", h)
-
 	return s, nil
 }
 
@@ -364,7 +356,10 @@ func (s *Server) buildHandlerChain(serverConfig *server.Config) http.Handler {
 
 // Copied from "k8s.io/apiserver/pkg/server" package
 func DefaultBuildHandlerChain(apiHandler http.Handler, c *server.Config) http.Handler {
-	handler := filterlatency.TrackCompleted(apiHandler)
+	// adding here for plugins that request the req to be authorized
+	handler := plugin.DefaultManager.WithInterceptors(apiHandler)
+
+	handler = filterlatency.TrackCompleted(handler)
 	handler = genericapifilters.WithAuthorization(handler, c.Authorization.Authorizer, c.Serializer)
 	handler = filterlatency.TrackStarted(handler, c.TracerProvider, "authorization")
 
@@ -429,6 +424,9 @@ func DefaultBuildHandlerChain(apiHandler http.Handler, c *server.Config) http.Ha
 		handler = genericapifilters.WithTracing(handler, c.TracerProvider)
 	}
 	handler = genericapifilters.WithLatencyTrackers(handler)
+
+	// this is for the plugins to be able to catch the requests with the info in the
+	// context
 	handler = genericapifilters.WithRequestInfo(handler, c.RequestInfoResolver)
 	handler = genericapifilters.WithRequestReceivedTimestamp(handler)
 
@@ -464,7 +462,7 @@ func initAdmission(ctx context.Context, vConfig *rest.Config) (admission.Interfa
 	serviceResolver := aggregatorapiserver.NewClusterIPServiceResolver(
 		kubeInformerFactory.Core().V1().Services().Lister(),
 	)
-	authInfoResolverWrapper := func(resolver webhook.AuthenticationInfoResolver) webhook.AuthenticationInfoResolver {
+	authInfoResolverWrapper := func(_ webhook.AuthenticationInfoResolver) webhook.AuthenticationInfoResolver {
 		return &kubeConfigProvider{
 			vConfig: vConfig,
 		}
@@ -481,7 +479,7 @@ func initAdmission(ctx context.Context, vConfig *rest.Config) (admission.Interfa
 		&emptyConfigProvider{},
 		admission.PluginInitializers{
 			webhookinit.NewPluginInitializer(authInfoResolverWrapper, serviceResolver),
-			initializer.New(vClient, nil, kubeInformerFactory, nil, nil, nil),
+			initializer.New(vClient, nil, kubeInformerFactory, nil, nil, nil, nil),
 		},
 		nil,
 	)

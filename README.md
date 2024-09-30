@@ -2,7 +2,7 @@
 
 This [vCluster](https://github.com/loft-sh/vcluster) plugin syncs [CAProviderClass](https://github.com/kubeops/csi-driver-cacerts) crds from the vcluster into the host cluster.
 
-This plugin has been forked from [loft-sh/vcluster-plugin-example](https://github.com/loft-sh/vcluster-plugin-example). For more information how to develop plugins in vcluster and a complete walk through, please refer to the [official vcluster docs](https://www.vcluster.com/docs/v0.19/advanced-topics/plugins-overview).
+This plugin has been forked from [loft-sh/vcluster-plugin-example](https://github.com/loft-sh/vcluster-plugin-example). For more information how to develop plugins in vcluster and a complete walk through, please refer to the [official vcluster docs](https://www.vcluster.com/docs/v0.19/advanced-topics/plugins-overview). You can find additional examples [here](https://github.com/loft-sh/vcluster-sdk/tree/main/examples).
 
 ### Using the Plugin
 
@@ -47,7 +47,7 @@ To just build the plugin image and push it to the registry, run:
 
 ```
 # Build
-docker build --push -t ghcr.io/appscode/vcluster-plugin:v0.0.1 .
+docker build --push -t ghcr.io/appscode/vcluster-plugin:v0.0.2 .
 
 # Multi-arch Build
 ## Ensure docker builder with multi platform support
@@ -58,7 +58,7 @@ docker buildx create \
 ## Build & push image
 docker build --push \
   --builder container --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/appscode/vcluster-plugin:v0.0.1 .
+  -t ghcr.io/appscode/vcluster-plugin:v0.0.2 .
 ```
 
 Then exchange the image in the `plugin.yaml`.

@@ -28,10 +28,7 @@ func main() {
 func Init(ctx *synccontext.RegisterContext) (*api.PluginConfig, error) {
 	// set suffix
 	// https://github.com/loft-sh/vcluster/blob/v0.19.7/cmd/vcluster/cmd/start.go#L61-L68
-	translate.VClusterName = ctx.Options.Name
-	if translate.VClusterName == "" {
-		translate.VClusterName = ctx.Options.DeprecatedSuffix
-	}
+	translate.VClusterName = ctx.Config.Name
 	if translate.VClusterName == "" {
 		translate.VClusterName = "vcluster"
 	}

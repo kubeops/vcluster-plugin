@@ -111,8 +111,8 @@ func (s *nodeSyncer) translateUpdateBackwards(pNode *corev1.Node, vNode *corev1.
 	}
 
 	// add annotation to prevent scale down of node by cluster-autoscaler
-	// the env var VCLUSTER_NODE_NAME is set when only one replica of vcluster is running
-	if nodeName, set := os.LookupEnv("VCLUSTER_NODE_NAME"); set && nodeName == pNode.Name {
+	// the env var NODE_NAME is set when only one replica of vcluster is running
+	if nodeName, set := os.LookupEnv("NODE_NAME"); set && nodeName == pNode.Name {
 		annotations["cluster-autoscaler.kubernetes.io/scale-down-disabled"] = "true"
 	}
 
@@ -140,11 +140,13 @@ func (s *nodeSyncer) translateUpdateStatus(ctx *synccontext.SyncContext, pNode *
 		}
 
 		// translate addresses
-		newAddresses := []corev1.NodeAddress{
-			{
+		newAddresses := []corev1.NodeAddress{}
+
+		if s.fakeKubeletHostnames {
+			newAddresses = append(newAddresses, corev1.NodeAddress{
 				Address: GetNodeHost(vNode.Name),
 				Type:    corev1.NodeHostName,
-			},
+			})
 		}
 
 		if s.fakeKubeletIPs {
@@ -186,7 +188,7 @@ func (s *nodeSyncer) translateUpdateStatus(ctx *synccontext.SyncContext, pNode *
 				klog.Errorf("Error listing pods: %v", err)
 			} else {
 				for _, pod := range podList.Items {
-					if !translate.Default.IsManaged(&pod) {
+					if !translate.Default.IsManaged(&pod, translate.Default.PhysicalName) {
 						// count pods that are not synced by this vcluster
 						nonVClusterPods++
 					}
