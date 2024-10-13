@@ -3,7 +3,8 @@
 plugin:
   vcluster-plugin:
     version: v2
-    image: ghcr.io/appscode/vcluster-plugin:v0.0.1
+    image: ghcr.io/appscode/vcluster-plugin:v0.0.2
+    imagePullPolicy: Always
     rbac:
       role:
         extraRules:
@@ -20,6 +21,10 @@ plugin:
 # resource definitions.
 rbac:
   clusterRole:
-    create: true
+    enabled: true
   role:
-    extended: true
+    enabled: true
+    extraRules:
+      - apiGroups: ["cacerts.csi.cert-manager.io"]
+        resources: ["caproviderclasses"]
+        verbs: ["*"]
