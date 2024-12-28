@@ -7,25 +7,39 @@ deployments:
       chart:
         name: vcluster
         repo: https://charts.loft.sh
-        version: v0.19.7
+        version: v0.22.0
       values:
-        serviceAccount:
-          create: false
-          name: default
+        controlPlane:
+          distro:
+            k3s:
+              enabled: true
+          statefulSet:
+            image:
+              repository: "loft-sh/vcluster-oss"
+            probes:
+              livenessProbe:
+                enabled: false
+              readinessProbe:
+                enabled: false
+              startupProbe:
+                enabled: false
+        sync:
+          # If you want to create custom storage classes
+          # inside the vcluster.
+          fromHost:
+            nodes:
+              enabled: true
+            storageClasses:
+              enabled: true
+        telemetry:
+          enabled: false
         rbac:
           clusterRole:
-            create: true
+            enabled: true
           role:
-            extended: true
-        syncer:
-          readinessProbe:
-            enabled: false
-          livenessProbe:
-            enabled: false
-        telemetry:
-          disabled: true
+            enabled: true
         plugin:
-          vcluster-plugin:
+          ace:
             version: v2
             config:
               reportingSecret: fake-reporting-secret
@@ -43,8 +57,8 @@ deployments:
 
 dev:
   vcluster:
-    imageSelector: "ghcr.io/loft-sh/vcluster"
-    devImage: golang:1.22
+    imageSelector: "ghcr.io/loft-sh/vcluster-oss"
+    devImage: golang:1.23
     workingDir: /plugins/vcluster-plugin
     container: syncer
     terminal:

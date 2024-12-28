@@ -12,12 +12,12 @@ To use the plugin, create a new vcluster with the `plugin.yaml`:
 # Install csi-driver-cacerts in host cluster
 helm upgrade -i cert-manager-csi-driver-cacerts \
   oci://ghcr.io/appscode-charts/cert-manager-csi-driver-cacerts \
-  --version v2024.7.28 \
+  --version v2024.10.17 \
   -n cert-manager --create-namespace --wait
 
 # Use public plugin.yaml
 vcluster create vcluster -n vcluster \
-  -f https://github.com/kubeops/vcluster-plugin/raw/master/plugin.yaml
+  -f https://github.com/appscode-cloud/vcluster-plugin/raw/master/plugin.yaml
 ```
 
 This will create a new vcluster with the plugin installed. After that, wait for vcluster to start up and check:
@@ -47,7 +47,7 @@ To just build the plugin image and push it to the registry, run:
 
 ```
 # Build
-docker build --push -t ghcr.io/appscode/vcluster-plugin:v0.0.2 .
+docker build --push -t ghcr.io/appscode/vcluster-plugin-ace:v0.0.3 .
 
 # Multi-arch Build
 ## Ensure docker builder with multi platform support
@@ -58,7 +58,7 @@ docker buildx create \
 ## Build & push image
 docker build --push \
   --builder container --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/appscode/vcluster-plugin:v0.0.2 .
+  -t ghcr.io/appscode/vcluster-plugin-ace:v0.0.3 .
 ```
 
 Then exchange the image in the `plugin.yaml`.

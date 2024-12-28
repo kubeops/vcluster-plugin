@@ -9,11 +9,11 @@ import (
 	"github.com/loft-sh/vcluster-sdk/plugin"
 	"github.com/loft-sh/vcluster/pkg/util/translate"
 	"github.com/pkg/errors"
+	"go.bytebuilders.dev/vcluster-plugin/api"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"kubeops.dev/csi-driver-cacerts/apis/cacerts"
-	"kubeops.dev/vcluster-plugin/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

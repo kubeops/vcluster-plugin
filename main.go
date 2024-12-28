@@ -7,10 +7,10 @@ import (
 	"github.com/loft-sh/vcluster-sdk/plugin"
 	synccontext "github.com/loft-sh/vcluster/pkg/controllers/syncer/context"
 	"github.com/loft-sh/vcluster/pkg/util/translate"
+	"go.bytebuilders.dev/vcluster-plugin/api"
+	"go.bytebuilders.dev/vcluster-plugin/hooks"
+	"go.bytebuilders.dev/vcluster-plugin/syncers"
 	"k8s.io/klog/v2"
-	"kubeops.dev/vcluster-plugin/api"
-	"kubeops.dev/vcluster-plugin/hooks"
-	"kubeops.dev/vcluster-plugin/syncers"
 )
 
 func main() {

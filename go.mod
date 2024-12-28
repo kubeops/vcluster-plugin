@@ -1,4 +1,4 @@
-module kubeops.dev/vcluster-plugin
+module go.bytebuilders.dev/vcluster-plugin
 
 go 1.23.0
 

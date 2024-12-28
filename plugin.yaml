@@ -1,9 +1,9 @@
 # Plugin Definition below. This is essentially a valid helm values file that will be merged
 # with the other vcluster values during vcluster create or helm install.
 plugin:
-  vcluster-plugin:
+  ace:
     version: v2
-    image: ghcr.io/appscode/vcluster-plugin:v0.0.2
+    image: ghcr.io/appscode/vcluster-plugin-ace:v0.0.3
     imagePullPolicy: Always
     rbac:
       role:
